@@ -1,0 +1,12 @@
+node_modules/
+.env
+logs/
+uploads/
+*.log
+.DS_Store
+coverage/
+
+
+
+BACKEND_REQUIREMENTS.md
+HMS_Backend_Complete.postman_collection.json
