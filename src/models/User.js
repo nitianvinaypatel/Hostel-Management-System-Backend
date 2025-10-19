@@ -7,11 +7,12 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   role: { 
     type: String, 
-    enum: ['student', 'caretaker', 'warden', 'admin', 'dean'],
+    enum: ['student', 'caretaker', 'warden', 'assistant_warden', 'admin', 'dean'],
     required: true 
   },
   phone: { type: String },
   profileImage: { type: String },
+  hostelId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hostel' }, // For warden, caretaker, assistant_warden
   isActive: { type: Boolean, default: true },
   isEmailVerified: { type: Boolean, default: false },
   emailVerificationToken: { type: String, select: false },

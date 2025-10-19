@@ -15,26 +15,56 @@ const generateToken = (userId, role) => {
 exports.register = catchAsync(async (req, res) => {
   const { email, password, name, role, studentId, department, year } = req.body;
 
+  // Only allow student registration through public endpoint
+  if (role && role !== 'student') {
+    throw new AppError('Only students can register. Other users must be created by admin.', 403);
+  }
+
   const existingUser = await User.findOne({ email });
   if (existingUser) {
     throw new AppError('Email already registered', 400);
   }
 
-  const user = await User.create({ email, password, name, role });
+  // Force role to be student
+  const user = await User.create({ email, password, name, role: 'student' });
 
-  if (role === 'student') {
-    if (!studentId) {
-      throw new AppError('Student ID is required for student registration', 400);
-    }
-    await Student.create({
-      userId: user._id,
-      studentId,
-      department,
-      year
-    });
+  if (!studentId) {
+    throw new AppError('Student ID is required for student registration', 400);
   }
+  
+  await Student.create({
+    userId: user._id,
+    studentId,
+    department,
+    year
+  });
 
   const token = generateToken(user._id, user.role);
+
+  // Send welcome email
+  try {
+    await sendEmail(
+      user.email,
+      'Welcome to Hostel Management System',
+      `<div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Welcome to HMS, ${name}!</h2>
+        <p>Your account has been successfully created.</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Account Details:</strong></p>
+          <p>Email: ${email}</p>
+          <p>Student ID: ${studentId}</p>
+          <p>Role: Student</p>
+        </div>
+        <p>You can now login at <a href="${process.env.FRONTEND_URL}">${process.env.FRONTEND_URL}</a></p>
+        <p>If you have any questions, feel free to contact support.</p>
+        <br>
+        <p>Best regards,<br>HMS Team</p>
+      </div>`
+    );
+  } catch (emailError) {
+    console.error('Failed to send welcome email:', emailError);
+    // Don't throw error, registration should succeed even if email fails
+  }
 
   res.status(201).json({
     success: true,

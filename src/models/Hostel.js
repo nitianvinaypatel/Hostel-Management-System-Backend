@@ -8,6 +8,7 @@ const HostelSchema = new mongoose.Schema({
   totalCapacity: { type: Number, required: true },
   occupiedCapacity: { type: Number, default: 0 },
   wardenId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  assistantWardenIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   caretakerIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   facilities: [{ type: String }],
   address: { type: String },

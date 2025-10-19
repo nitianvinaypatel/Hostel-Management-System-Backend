@@ -60,6 +60,7 @@ exports.getAllUsers = async (req, res, next) => {
 
     const users = await User.find(filter)
       .select('-password')
+      .populate('hostelId', 'name code')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -78,10 +79,25 @@ exports.getAllUsers = async (req, res, next) => {
 
 exports.createUser = async (req, res, next) => {
   try {
-    const { email, password, name, role, phone } = req.body;
+    const { email, password, name, role, phone, hostelId } = req.body;
 
     const existingUser = await User.findOne({ email });
     if (existingUser) throw new AppError('User already exists', 400);
+
+    // Validate hostel assignment for staff roles
+    if (['warden', 'assistant_warden', 'caretaker'].includes(role)) {
+      if (!hostelId) {
+        throw new AppError(`Hostel assignment is required for ${role} role`, 400);
+      }
+
+      const hostel = await Hostel.findById(hostelId);
+      if (!hostel) throw new AppError('Hostel not found', 404);
+
+      // Check if warden already exists for this hostel
+      if (role === 'warden' && hostel.wardenId) {
+        throw new AppError('This hostel already has a warden assigned', 400);
+      }
+    }
 
     const user = await User.create({
       email,
@@ -89,8 +105,54 @@ exports.createUser = async (req, res, next) => {
       name,
       role,
       phone,
+      hostelId: ['warden', 'assistant_warden', 'caretaker'].includes(role) ? hostelId : undefined,
       isActive: true
     });
+
+    // Update hostel with staff assignment
+    if (hostelId && ['warden', 'assistant_warden', 'caretaker'].includes(role)) {
+      const hostel = await Hostel.findById(hostelId);
+      
+      if (role === 'warden') {
+        hostel.wardenId = user._id;
+      } else if (role === 'assistant_warden') {
+        if (!hostel.assistantWardenIds) hostel.assistantWardenIds = [];
+        hostel.assistantWardenIds.push(user._id);
+      } else if (role === 'caretaker') {
+        if (!hostel.caretakerIds) hostel.caretakerIds = [];
+        hostel.caretakerIds.push(user._id);
+      }
+      
+      await hostel.save();
+    }
+
+    // Send welcome email
+    const { sendEmail } = require('../config/email');
+    try {
+      const hostelInfo = hostelId ? await Hostel.findById(hostelId).select('name code') : null;
+      
+      await sendEmail(
+        user.email,
+        'Welcome to Hostel Management System',
+        `<div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>Welcome to HMS, ${name}!</h2>
+          <p>Your account has been created by the administrator.</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Account Details:</strong></p>
+            <p>Email: ${email}</p>
+            <p>Role: ${role.replace('_', ' ').toUpperCase()}</p>
+            ${hostelInfo ? `<p>Assigned Hostel: ${hostelInfo.name} (${hostelInfo.code})</p>` : ''}
+            <p>Temporary Password: ${password}</p>
+          </div>
+          <p><strong>Important:</strong> Please change your password after first login.</p>
+          <p>You can login at <a href="${process.env.FRONTEND_URL}">${process.env.FRONTEND_URL}</a></p>
+          <br>
+          <p>Best regards,<br>HMS Team</p>
+        </div>`
+      );
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+    }
 
     const userResponse = user.toObject();
     delete userResponse.password;
@@ -109,10 +171,49 @@ exports.updateUser = async (req, res, next) => {
     delete updates.password;
     delete updates.email;
 
-    const user = await User.findByIdAndUpdate(userId, updates, { new: true }).select('-password');
+    const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    res.json({ success: true, data: user });
+    // Handle hostel reassignment for staff
+    if (updates.hostelId && ['warden', 'assistant_warden', 'caretaker'].includes(user.role)) {
+      const newHostel = await Hostel.findById(updates.hostelId);
+      if (!newHostel) throw new AppError('Hostel not found', 404);
+
+      // Remove from old hostel
+      if (user.hostelId) {
+        const oldHostel = await Hostel.findById(user.hostelId);
+        if (oldHostel) {
+          if (user.role === 'warden' && oldHostel.wardenId?.toString() === userId) {
+            oldHostel.wardenId = null;
+          } else if (user.role === 'assistant_warden') {
+            oldHostel.assistantWardenIds = oldHostel.assistantWardenIds.filter(id => id.toString() !== userId);
+          } else if (user.role === 'caretaker') {
+            oldHostel.caretakerIds = oldHostel.caretakerIds.filter(id => id.toString() !== userId);
+          }
+          await oldHostel.save();
+        }
+      }
+
+      // Add to new hostel
+      if (user.role === 'warden') {
+        if (newHostel.wardenId) throw new AppError('New hostel already has a warden', 400);
+        newHostel.wardenId = userId;
+      } else if (user.role === 'assistant_warden') {
+        if (!newHostel.assistantWardenIds) newHostel.assistantWardenIds = [];
+        newHostel.assistantWardenIds.push(userId);
+      } else if (user.role === 'caretaker') {
+        if (!newHostel.caretakerIds) newHostel.caretakerIds = [];
+        newHostel.caretakerIds.push(userId);
+      }
+      await newHostel.save();
+    }
+
+    Object.assign(user, updates);
+    await user.save();
+
+    const updatedUser = await User.findById(userId).select('-password').populate('hostelId', 'name code');
+
+    res.json({ success: true, data: updatedUser });
   } catch (error) {
     next(error);
   }
@@ -122,8 +223,26 @@ exports.deleteUser = async (req, res, next) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findByIdAndUpdate(userId, { isActive: false }, { new: true });
+    const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
+
+    // Remove from hostel if staff member
+    if (user.hostelId && ['warden', 'assistant_warden', 'caretaker'].includes(user.role)) {
+      const hostel = await Hostel.findById(user.hostelId);
+      if (hostel) {
+        if (user.role === 'warden' && hostel.wardenId?.toString() === userId) {
+          hostel.wardenId = null;
+        } else if (user.role === 'assistant_warden') {
+          hostel.assistantWardenIds = hostel.assistantWardenIds.filter(id => id.toString() !== userId);
+        } else if (user.role === 'caretaker') {
+          hostel.caretakerIds = hostel.caretakerIds.filter(id => id.toString() !== userId);
+        }
+        await hostel.save();
+      }
+    }
+
+    user.isActive = false;
+    await user.save();
 
     res.json({ success: true, message: 'User deactivated successfully' });
   } catch (error) {
@@ -141,8 +260,9 @@ exports.getAllHostels = async (req, res, next) => {
     if (type) filter.type = type;
 
     const hostels = await Hostel.find(filter)
-      .populate('wardenId', 'name email')
-      .populate('caretakerIds', 'name email')
+      .populate('wardenId', 'name email phone')
+      .populate('assistantWardenIds', 'name email phone')
+      .populate('caretakerIds', 'name email phone')
       .sort({ name: 1 });
 
     res.json({ success: true, data: hostels });
@@ -153,18 +273,18 @@ exports.getAllHostels = async (req, res, next) => {
 
 exports.createHostel = async (req, res, next) => {
   try {
-    const { name, code, type, totalRooms, totalCapacity, wardenId, facilities, address, contactNumber } = req.body;
+    const { name, code, type, totalRooms, totalCapacity, facilities, address, contactNumber } = req.body;
 
     const existingHostel = await Hostel.findOne({ code });
     if (existingHostel) throw new AppError('Hostel code already exists', 400);
 
+    // Create hostel without staff - staff will be assigned when creating users
     const hostel = await Hostel.create({
       name,
       code,
       type,
       totalRooms,
       totalCapacity,
-      wardenId,
       facilities,
       address,
       contactNumber
