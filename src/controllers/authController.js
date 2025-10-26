@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
 const Student = require('../models/Student');
+const Hostel = require('../models/Hostel');
 const { AppError, catchAsync } = require('../middleware/error.middleware');
 const { sendEmail } = require('../config/email');
 const { generateId } = require('../utils/helpers');
@@ -12,8 +13,56 @@ const generateToken = (userId, role) => {
   });
 };
 
+exports.getRegistrationOptions = catchAsync(async (req, res) => {
+  const registrationOptions = require('../config/registrationOptions');
+  
+  res.json({
+    success: true,
+    data: registrationOptions,
+    timestamp: new Date().toISOString()
+  });
+});
+
+exports.getHostels = catchAsync(async (req, res) => {
+  const { gender } = req.query;
+  
+  const filter = { isActive: true };
+  
+  // Filter by gender if provided (boys/girls hostel)
+  if (gender === 'male') {
+    filter.type = 'boys';
+  } else if (gender === 'female') {
+    filter.type = 'girls';
+  }
+
+  const hostels = await Hostel.find(filter)
+    .select('_id name code type totalCapacity occupiedCapacity facilities')
+    .sort({ code: 1 });
+
+  const hostelsWithAvailability = hostels.map(hostel => ({
+    _id: hostel._id,
+    name: hostel.name,
+    code: hostel.code,
+    type: hostel.type,
+    totalCapacity: hostel.totalCapacity,
+    occupiedCapacity: hostel.occupiedCapacity,
+    availableCapacity: hostel.totalCapacity - hostel.occupiedCapacity,
+    facilities: hostel.facilities,
+    isAvailable: (hostel.totalCapacity - hostel.occupiedCapacity) > 0
+  }));
+
+  res.json({
+    success: true,
+    data: hostelsWithAvailability,
+    timestamp: new Date().toISOString()
+  });
+});
+
 exports.register = catchAsync(async (req, res) => {
-  const { email, password, name, role, studentId, department, year } = req.body;
+  const { 
+    email, password, name, role, phone,
+    studentId, course, branch, year, semester, gender, hostelId
+  } = req.body;
 
   // Only allow student registration through public endpoint
   if (role && role !== 'student') {
@@ -25,24 +74,47 @@ exports.register = catchAsync(async (req, res) => {
     throw new AppError('Email already registered', 400);
   }
 
-  // Force role to be student
-  const user = await User.create({ email, password, name, role: 'student' });
-
-  if (!studentId) {
-    throw new AppError('Student ID is required for student registration', 400);
+  // Validate required fields
+  if (!studentId || !course || !branch || !year || !semester || !gender) {
+    throw new AppError('All required fields must be provided', 400);
   }
+
+  // Validate hostel if provided
+  if (hostelId) {
+    const hostel = await Hostel.findById(hostelId);
+    if (!hostel) {
+      throw new AppError('Invalid hostel selected', 400);
+    }
+  }
+
+  // Create user account
+  const user = await User.create({ 
+    email, 
+    password, 
+    name, 
+    phone,
+    role: 'student' 
+  });
   
+  // Create student profile
   await Student.create({
     userId: user._id,
     studentId,
-    department,
-    year
+    course,
+    branch,
+    department: branch, // For backward compatibility
+    year,
+    semester,
+    gender,
+    hostelId: hostelId || null
   });
 
   const token = generateToken(user._id, user.role);
 
   // Send welcome email
   try {
+    const hostelInfo = hostelId ? await Hostel.findById(hostelId).select('name code') : null;
+    
     await sendEmail(
       user.email,
       'Welcome to Hostel Management System',
@@ -53,7 +125,10 @@ exports.register = catchAsync(async (req, res) => {
           <p><strong>Account Details:</strong></p>
           <p>Email: ${email}</p>
           <p>Student ID: ${studentId}</p>
-          <p>Role: Student</p>
+          <p>Course: ${course}</p>
+          <p>Branch: ${branch}</p>
+          <p>Year: ${year} | Semester: ${semester}</p>
+          ${hostelInfo ? `<p>Hostel: ${hostelInfo.name} (${hostelInfo.code})</p>` : '<p>Hostel: Not assigned yet</p>'}
         </div>
         <p>You can now login at <a href="${process.env.FRONTEND_URL}">${process.env.FRONTEND_URL}</a></p>
         <p>If you have any questions, feel free to contact support.</p>

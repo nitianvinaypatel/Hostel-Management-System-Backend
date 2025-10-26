@@ -46,15 +46,31 @@ if (process.env.NODE_ENV === 'development') {
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000,
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  message: 'Too many requests from this IP, please try again later'
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      message: 'Too many requests from this IP, please try again later',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 app.use('/api/', limiter);
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Too many authentication attempts, please try again later'
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Increased from 5 to 10 attempts
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      message: 'Too many authentication attempts, please try again after 15 minutes',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 app.use('/api/auth/login', authLimiter);

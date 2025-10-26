@@ -11,6 +11,8 @@ const {
   resetPasswordSchema
 } = require('../validators/authValidator');
 
+router.get('/registration-options', authController.getRegistrationOptions); // Get courses, branches, etc.
+router.get('/hostels', authController.getHostels); // Get available hostels (can filter by gender)
 router.post('/register', validate(registerSchema), authController.register);
 router.post('/login', validate(loginSchema), authController.login);
 router.get('/me', authMiddleware, authController.getMe);

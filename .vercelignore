@@ -1,0 +1,11 @@
+node_modules
+.git
+.env
+logs
+*.log
+.DS_Store
+scripts
+HMS_Backend.postman_environment.json
+HMS_Backend_Complete.postman_collection.json
+BACKEND_REQUIREMENTS.md
+README.md

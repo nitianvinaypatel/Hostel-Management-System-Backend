@@ -6,25 +6,137 @@ const { AppError, catchAsync } = require('../middleware/error.middleware');
 const { generateId, getPaginationParams } = require('../utils/helpers');
 
 exports.getDashboard = catchAsync(async (req, res) => {
+  const Request = require('../models/Request');
+  const Notice = require('../models/Notice');
+  
   const student = await Student.findOne({ userId: req.user._id })
-    .populate('hostelId')
-    .populate('roomId');
+    .populate('userId', 'name email')
+    .populate('hostelId', 'name code')
+    .populate('roomId', 'roomNumber floor');
 
   if (!student) {
     throw new AppError('Student profile not found', 404);
   }
 
-  const complaintsCount = await Complaint.countDocuments({ studentId: student._id });
-  const pendingPayments = await Payment.countDocuments({ 
-    studentId: student._id, 
-    status: 'pending' 
-  });
+  // Get stats
+  const [
+    myRequests,
+    complaints,
+    pendingPaymentsData,
+    latestNotices,
+    recentActivity
+  ] = await Promise.all([
+    // My Requests
+    Request.find({ studentId: student._id })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select('requestType status createdAt'),
+    
+    // Complaints
+    Complaint.find({ studentId: student._id })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select('title status category createdAt'),
+    
+    // Pending Payments
+    Payment.find({ studentId: student._id, status: 'pending' })
+      .sort({ dueDate: 1 })
+      .select('amount paymentType dueDate'),
+    
+    // Latest Notices
+    Notice.find({
+      $or: [
+        { targetRole: 'all' },
+        { targetRole: 'student' },
+        { targetHostels: student.hostelId }
+      ]
+    })
+      .populate('createdBy', 'name role')
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('title content priority createdAt'),
+    
+    // Recent Activity (complaints + requests combined)
+    Promise.all([
+      Complaint.find({ studentId: student._id })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select('title status category updatedAt'),
+      Request.find({ studentId: student._id })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select('requestType status updatedAt')
+    ])
+  ]);
+
+  // Combine and sort recent activity
+  const combinedActivity = [
+    ...recentActivity[0].map(c => ({
+      type: 'complaint',
+      title: c.title,
+      status: c.status,
+      category: c.category,
+      timestamp: c.updatedAt
+    })),
+    ...recentActivity[1].map(r => ({
+      type: 'request',
+      title: `${r.requestType.replace('_', ' ')} Request`,
+      status: r.status,
+      timestamp: r.updatedAt
+    }))
+  ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 5);
+
+  // Calculate request stats
+  const requestStats = {
+    total: myRequests.length,
+    pending: myRequests.filter(r => r.status === 'pending').length,
+    approved: myRequests.filter(r => r.status === 'approved').length
+  };
+
+  // Calculate complaint stats
+  const complaintStats = {
+    total: complaints.length,
+    inProgress: complaints.filter(c => c.status === 'in-progress').length
+  };
+
+  // Calculate pending payments total
+  const pendingPaymentsTotal = pendingPaymentsData.reduce((sum, p) => sum + p.amount, 0);
+  const nextPaymentDue = pendingPaymentsData.length > 0 ? pendingPaymentsData[0].dueDate : null;
+
+  // Room details
+  const roomDetails = student.roomId ? {
+    roomNumber: student.roomId.roomNumber,
+    floor: student.roomId.floor,
+    hostelName: student.hostelId?.name,
+    hostelCode: student.hostelId?.code
+  } : null;
 
   res.json({
     success: true,
     data: {
-      student,
-      stats: { complaintsCount, pendingPayments }
+      user: {
+        name: student.userId?.name,
+        email: student.userId?.email
+      },
+      stats: {
+        myRequests: requestStats,
+        complaints: complaintStats,
+        pendingPayments: {
+          total: pendingPaymentsTotal,
+          count: pendingPaymentsData.length,
+          nextDueDate: nextPaymentDue
+        },
+        roomDetails
+      },
+      latestNotices: latestNotices.map(n => ({
+        _id: n._id,
+        title: n.title,
+        content: n.content,
+        priority: n.priority,
+        date: n.createdAt,
+        isNew: (new Date() - new Date(n.createdAt)) < 2 * 24 * 60 * 60 * 1000 // 2 days
+      })),
+      recentActivity: combinedActivity
     },
     timestamp: new Date().toISOString()
   });
