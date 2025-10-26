@@ -1,22 +1,34 @@
 require('dotenv').config();
-const http = require('http');
 const app = require('./src/app');
 const connectDB = require('./src/config/database');
-const logger = require('./src/utils/logger');
 
 // For Vercel serverless deployment
 if (process.env.VERCEL) {
   let isConnected = false;
   
+  // Socket.io not supported in serverless
+  global.io = null;
+  
   module.exports = async (req, res) => {
-    if (!isConnected) {
-      await connectDB();
-      isConnected = true;
+    try {
+      if (!isConnected) {
+        await connectDB();
+        isConnected = true;
+      }
+      return app(req, res);
+    } catch (error) {
+      console.error('Serverless function error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
-    return app(req, res);
   };
 } else {
   // For local development
+  const http = require('http');
+  const logger = require('./src/utils/logger');
   const { initializeSocket } = require('./src/socket/socketHandler');
   
   connectDB();
