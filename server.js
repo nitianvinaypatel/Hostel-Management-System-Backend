@@ -1,35 +1,44 @@
 require('dotenv').config();
-const app = require('./src/app');
-const connectDB = require('./src/config/database');
 
 // For Vercel serverless deployment
-if (process.env.VERCEL) {
+if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
   let isConnected = false;
+  let app = null;
   
   // Socket.io not supported in serverless
   global.io = null;
   
   module.exports = async (req, res) => {
     try {
+      // Lazy load app and database connection
+      if (!app) {
+        app = require('./src/app');
+      }
+      
       if (!isConnected) {
+        const connectDB = require('./src/config/database');
         await connectDB();
         isConnected = true;
       }
+      
       return app(req, res);
     } catch (error) {
       console.error('Serverless function error:', error);
+      console.error('Error stack:', error.stack);
       return res.status(500).json({ 
         success: false, 
         message: 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error: error.message
       });
     }
   };
 } else {
   // For local development
+  const app = require('./src/app');
   const http = require('http');
   const logger = require('./src/utils/logger');
   const { initializeSocket } = require('./src/socket/socketHandler');
+  const connectDB = require('./src/config/database');
   
   connectDB();
 
