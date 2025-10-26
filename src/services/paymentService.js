@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const razorpayInstance = require('../config/razorpay');
+const getRazorpayInstance = require('../config/razorpay');
 const Payment = require('../models/Payment');
 const Student = require('../models/Student');
 const { generateId } = require('../utils/helpers');
@@ -9,6 +9,7 @@ const { sendPaymentSuccessEmail } = require('./emailService');
 
 const createOrder = async (studentId, amount, paymentType, description) => {
   try {
+    const razorpayInstance = getRazorpayInstance();
     const options = {
       amount: amount * 100, // amount in paise
       currency: 'INR',
