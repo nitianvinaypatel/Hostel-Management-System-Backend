@@ -7,7 +7,9 @@
     "dev": "nodemon server.js",
     "test": "jest --coverage",
     "create-admin": "node scripts/createAdmin.js",
-    "create-hostels": "node scripts/createHostels.js"
+    "create-hostels": "node scripts/createHostels.js",
+    "seed": "node scripts/seedAdminData.js",
+    "seed:clear": "node scripts/seedAdminData.js --clear"
   },
   "keywords": [
     "hostel",

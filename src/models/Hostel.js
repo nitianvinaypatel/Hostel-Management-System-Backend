@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const HostelSchema = new mongoose.Schema({
   name: { type: String, required: true },
   code: { type: String, required: true, unique: true },
-  type: { type: String, enum: ['boys', 'girls'], required: true },
+  type: { type: String, enum: ['boys', 'girls', 'mixed'], required: true },
   totalRooms: { type: Number, required: true },
   totalCapacity: { type: Number, required: true },
   occupiedCapacity: { type: Number, default: 0 },

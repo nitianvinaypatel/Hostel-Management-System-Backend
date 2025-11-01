@@ -10,7 +10,7 @@ const NoticeSchema = new mongoose.Schema({
   },
   priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
   targetAudience: {
-    roles: [{ type: String, enum: ['student', 'caretaker', 'warden', 'all'] }],
+    roles: [{ type: String, enum: ['student', 'caretaker', 'warden', 'assistant_warden', 'dean', 'admin', 'all'] }],
     hostels: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Hostel' }]
   },
   attachments: [{ url: String, filename: String }],

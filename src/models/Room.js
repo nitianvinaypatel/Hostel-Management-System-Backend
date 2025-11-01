@@ -9,7 +9,7 @@ const RoomSchema = new mongoose.Schema({
   currentOccupancy: { type: Number, default: 0 },
   roomType: { type: String, enum: ['single', 'double', 'triple', 'quad'] },
   facilities: [{ type: String }],
-  status: { type: String, enum: ['available', 'occupied', 'maintenance'], default: 'available' },
+  status: { type: String, enum: ['available', 'occupied', 'maintenance', 'reserved'], default: 'available' },
   monthlyRent: { type: Number },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

@@ -5,8 +5,14 @@ uploads/
 *.log
 .DS_Store
 coverage/
+*.md
+postman/
+scripts/
 
 
 
 BACKEND_REQUIREMENTS.md
 HMS_Backend_Complete.postman_collection.json
+HMS_Backend.postman_environment.json
+hms_project_posterr.html
+test-admin-apis.http
