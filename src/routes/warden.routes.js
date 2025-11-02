@@ -6,34 +6,65 @@ const { authenticate, authorize } = require('../middleware/auth.middleware');
 router.use(authenticate);
 router.use(authorize('warden'));
 
-// Dashboard
-router.get('/dashboard', wardenController.getDashboard);
+// ==================== DASHBOARD APIs ====================
+router.get('/dashboard/stats', wardenController.getDashboardStats);
+router.get('/dashboard/activities', wardenController.getRecentActivities);
+router.get('/dashboard/pending-approvals', wardenController.getPendingApprovalsSummary);
 
-// Complaints
+// ==================== APPROVALS MANAGEMENT APIs ====================
+router.get('/approvals', wardenController.getAllApprovals);
+router.get('/approvals/:approvalId', wardenController.getApprovalDetails);
+router.put('/approvals/:approvalId/approve', wardenController.approveApproval);
+router.put('/approvals/:approvalId/reject', wardenController.rejectApproval);
+
+// ==================== COMPLAINTS MANAGEMENT APIs ====================
 router.get('/complaints', wardenController.getComplaints);
-router.put('/complaints/:complaintId', wardenController.updateComplaint);
+router.put('/complaints/:complaintId/assign', wardenController.assignComplaint);
+router.put('/complaints/:complaintId/resolve', wardenController.resolveComplaint);
+router.put('/complaints/:complaintId/escalate', wardenController.escalateComplaint);
 
-// Requisitions
+// ==================== CARETAKER MANAGEMENT APIs ====================
+router.get('/caretakers', wardenController.getAllCaretakers);
+router.get('/caretakers/:caretakerId', wardenController.getCaretakerDetails);
+router.post('/caretakers', wardenController.createCaretaker);
+router.put('/caretakers/:caretakerId', wardenController.updateCaretaker);
+router.put('/caretakers/:caretakerId/toggle-status', wardenController.toggleCaretakerStatus);
+
+// ==================== REQUISITIONS MANAGEMENT APIs ====================
 router.get('/requisitions', wardenController.getRequisitions);
-router.put('/requisitions/:requisitionId', wardenController.updateRequisition);
+router.get('/requisitions/:requisitionId', wardenController.getRequisitionDetails);
+router.put('/requisitions/:requisitionId/approve', wardenController.approveRequisition);
+router.put('/requisitions/:requisitionId/reject', wardenController.rejectRequisition);
+router.put('/requisitions/:requisitionId/escalate', wardenController.escalateRequisition);
 
-// Requests (Room/Hostel Change)
-router.get('/requests', wardenController.getRequests);
-router.put('/requests/:requestId', wardenController.updateRequest);
+// ==================== ANNOUNCEMENTS APIs ====================
+router.get('/announcements', wardenController.getAllAnnouncements);
+router.post('/announcements', wardenController.createAnnouncement);
 
-// Room Allotments
-router.get('/room-allotments', wardenController.getRoomAllotments);
+// ==================== INVENTORY MANAGEMENT APIs ====================
+router.get('/inventory', wardenController.getAllInventory);
+router.get('/inventory/:itemId', wardenController.getInventoryDetails);
+router.post('/inventory', wardenController.addInventoryItem);
+router.put('/inventory/:itemId', wardenController.updateInventoryItem);
+router.delete('/inventory/:itemId', wardenController.deleteInventoryItem);
 
-// Announcements
-router.post('/announcements', wardenController.sendAnnouncement);
+// ==================== MESS MENU MANAGEMENT APIs ====================
+router.get('/mess/menu', wardenController.getWeeklyMenu);
+router.put('/mess/menu/:dayId', wardenController.updateDayMenu);
+router.get('/mess/feedback', wardenController.getMessFeedback);
 
-// Reports
-router.get('/reports', wardenController.generateReport);
+// ==================== REPORTS APIs ====================
+router.get('/reports/occupancy', wardenController.getOccupancyReport);
+router.get('/reports/complaints', wardenController.getComplaintsReport);
+router.get('/reports/requisitions', wardenController.getRequisitionsReport);
+router.get('/reports/payments', wardenController.getPaymentsReport);
+router.get('/reports/export', wardenController.exportReport);
 
-// Caretaker Assignment
-router.post('/assign-caretaker', wardenController.assignCaretaker);
-
-// Mess Menu
-router.get('/mess-menu', wardenController.getMessMenu);
+// ==================== LEGACY/BACKWARD COMPATIBILITY ====================
+// Keep old endpoints for backward compatibility
+router.get('/dashboard', wardenController.getDashboardStats);
+router.get('/hostel-applications', wardenController.getAllApprovals);
+router.put('/hostel-applications/:applicationId/approve', wardenController.approveApproval);
+router.put('/hostel-applications/:applicationId/reject', wardenController.rejectApproval);
 
 module.exports = router;

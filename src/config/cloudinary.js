@@ -15,7 +15,7 @@ const configureCloudinary = () => {
   }
 };
 
-const uploadToCloudinary = async (file, folder) => {
+const uploadToCloudinary = async (fileBuffer, folder) => {
   configureCloudinary();
   if (!isConfigured) {
     throw new Error('Cloudinary is not configured');
@@ -30,7 +30,12 @@ const uploadToCloudinary = async (file, folder) => {
       }
     );
     
-    uploadStream.end(file.buffer);
+    // Convert ArrayBuffer to Buffer if needed
+    const buffer = Buffer.isBuffer(fileBuffer) 
+      ? fileBuffer 
+      : Buffer.from(fileBuffer);
+    
+    uploadStream.end(buffer);
   });
 };
 

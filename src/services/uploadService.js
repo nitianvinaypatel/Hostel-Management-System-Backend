@@ -7,12 +7,14 @@ const uploadFile = async (file, folder = 'hms') => {
       throw new AppError('No file provided', 400);
     }
 
-    const result = await uploadToCloudinary(file, folder);
+    // Pass the buffer directly to uploadToCloudinary
+    const fileBuffer = file.buffer || file;
+    const result = await uploadToCloudinary(fileBuffer, folder);
     
     return {
       url: result.secure_url,
       publicId: result.public_id,
-      filename: file.originalname
+      filename: file.originalname || 'uploaded-file'
     };
   } catch (error) {
     throw new AppError('File upload failed: ' + error.message, 500);
@@ -46,5 +48,6 @@ const deleteFile = async (publicId) => {
 module.exports = {
   uploadFile,
   uploadMultipleFiles,
-  deleteFile
+  deleteFile,
+  uploadToCloudinary: require('../config/cloudinary').uploadToCloudinary
 };

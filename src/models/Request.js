@@ -4,9 +4,12 @@ const RequestSchema = new mongoose.Schema({
   requestId: { type: String, required: true, unique: true },
   requestType: { 
     type: String, 
-    enum: ['room_change', 'hostel_change', 'roommate_change'],
+    enum: ['room_change', 'hostel_change', 'roommate_change', 'leave', 'guest_entry', 'facility', 'other'],
     required: true 
   },
+  subject: { type: String },
+  startDate: { type: Date },
+  endDate: { type: Date },
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
   hostelId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hostel' },
   currentHostelId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hostel' },

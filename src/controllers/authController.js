@@ -69,14 +69,29 @@ exports.register = catchAsync(async (req, res) => {
     throw new AppError('Only students can register. Other users must be created by admin.', 403);
   }
 
+  // Validate required fields
+  if (!studentId || !course || !branch || !year || !semester || !gender) {
+    throw new AppError('All required fields must be provided', 400);
+  }
+
+  // Check for duplicate email
   const existingUser = await User.findOne({ email });
   if (existingUser) {
     throw new AppError('Email already registered', 400);
   }
 
-  // Validate required fields
-  if (!studentId || !course || !branch || !year || !semester || !gender) {
-    throw new AppError('All required fields must be provided', 400);
+  // Check for duplicate phone number
+  if (phone) {
+    const existingPhone = await User.findOne({ phone });
+    if (existingPhone) {
+      throw new AppError('Phone number already registered', 400);
+    }
+  }
+
+  // Check for duplicate student ID
+  const existingStudent = await Student.findOne({ studentId });
+  if (existingStudent) {
+    throw new AppError('Student ID already registered', 400);
   }
 
   // Validate hostel if provided
@@ -97,17 +112,23 @@ exports.register = catchAsync(async (req, res) => {
   });
   
   // Create student profile
-  await Student.create({
-    userId: user._id,
-    studentId,
-    course,
-    branch,
-    department: branch, // For backward compatibility
-    year,
-    semester,
-    gender,
-    hostelId: hostelId || null
-  });
+  try {
+    await Student.create({
+      userId: user._id,
+      studentId,
+      course,
+      branch,
+      department: branch, // For backward compatibility
+      year,
+      semester,
+      gender,
+      hostelId: hostelId || null
+    });
+  } catch (error) {
+    // If student creation fails, delete the user account to maintain consistency
+    await User.findByIdAndDelete(user._id);
+    throw error;
+  }
 
   const token = generateToken(user._id, user.role);
 

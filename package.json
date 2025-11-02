@@ -9,7 +9,14 @@
     "create-admin": "node scripts/createAdmin.js",
     "create-hostels": "node scripts/createHostels.js",
     "seed": "node scripts/seedAdminData.js",
-    "seed:clear": "node scripts/seedAdminData.js --clear"
+    "seed:clear": "node scripts/seedAdminData.js --clear",
+    "seed-rooms": "node scripts/seedRooms.js",
+    "seed-caretaker": "node scripts/seedCaretakerData.js",
+    "seed-complete": "node scripts/seedCompleteDatabase.js",
+    "check-rooms": "node scripts/checkRooms.js",
+    "diagnose": "node scripts/diagnoseHostelRooms.js",
+    "fill-empty-hostels": "node scripts/fillEmptyHostels.js",
+    "reset-hostels-rooms": "node scripts/resetAndSeedHostelsRooms.js"
   },
   "keywords": [
     "hostel",
