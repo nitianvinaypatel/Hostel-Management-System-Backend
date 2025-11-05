@@ -80,10 +80,6 @@ router.get('/emergency-contacts', studentController.getEmergencyContacts);
 // ==================== NOTICES ====================
 router.get('/notices', studentController.getNotices);
 
-// ==================== MESSAGES/CHAT ====================
-router.post('/messages', studentController.sendMessage);
-router.get('/messages/:userId', studentController.getMessages);
-
 // ==================== LEGACY ROUTES (for backward compatibility) ====================
 router.get('/room-details', studentController.getRoomAllotment);
 router.post('/ratings', studentController.submitFeedback);

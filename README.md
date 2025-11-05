@@ -9,9 +9,9 @@ A comprehensive backend API for managing hostel operations including student man
 - **Complaint System**: File and track complaints with multi-level status updates
 - **Requisition Management**: Multi-level approval workflow (Caretaker → Warden → Dean → Admin)
 - **Payment Integration**: Razorpay integration for online fee payments
-- **Real-time Updates**: Socket.io for live notifications and messaging
 - **File Upload**: Cloudinary integration for secure file storage
 - **Email Notifications**: Automated email alerts for important events
+- **Notifications**: In-app notification system for important updates
 - **Security**: Rate limiting, XSS protection, NoSQL injection prevention
 
 ## 📋 Tech Stack
@@ -22,7 +22,6 @@ A comprehensive backend API for managing hostel operations including student man
 - **Authentication**: JWT + bcryptjs
 - **Payment Gateway**: Razorpay
 - **File Storage**: Cloudinary
-- **Real-time**: Socket.io
 - **Email**: Nodemailer
 - **Validation**: Joi
 - **Logging**: Winston + Morgan
@@ -99,7 +98,6 @@ backend/
 │   ├── services/        # Business logic
 │   ├── utils/           # Utility functions
 │   ├── validators/      # Input validation
-│   ├── socket/          # Socket.io handlers
 │   └── app.js           # Express app
 ├── logs/                # Application logs
 ├── server.js            # Entry point

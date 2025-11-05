@@ -11,11 +11,6 @@ const createNotification = async (userId, title, message, type, relatedId = null
       relatedModel: type.charAt(0).toUpperCase() + type.slice(1)
     });
     
-    // Emit socket event for real-time notification if io is available
-    if (global.io) {
-      global.io.to(userId.toString()).emit('notification', notification);
-    }
-    
     return notification;
   } catch (error) {
     console.error('Error creating notification:', error);
