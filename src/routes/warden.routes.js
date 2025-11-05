@@ -41,6 +41,12 @@ router.put('/requisitions/:requisitionId/escalate', wardenController.escalateReq
 router.get('/announcements', wardenController.getAllAnnouncements);
 router.post('/announcements', wardenController.createAnnouncement);
 
+// ==================== NOTIFICATION APIs ====================
+router.post('/notifications/send', wardenController.sendNotification);
+router.get('/notifications', wardenController.getNotifications);
+router.put('/notifications/:notificationId/read', wardenController.markNotificationRead);
+router.put('/notifications/read-all', wardenController.markAllNotificationsRead);
+
 // ==================== INVENTORY MANAGEMENT APIs ====================
 router.get('/inventory', wardenController.getAllInventory);
 router.get('/inventory/:itemId', wardenController.getInventoryDetails);

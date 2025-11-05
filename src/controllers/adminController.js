@@ -1423,8 +1423,19 @@ exports.createNotification = async (req, res, next) => {
   try {
     const { title, message, type, targetRoles, targetHostels, priority } = req.body;
 
+    if (!title || !message) {
+      throw new AppError('Title and message are required', 400);
+    }
+
     if (!targetRoles || targetRoles.length === 0) {
       throw new AppError('At least one target role must be selected', 400);
+    }
+
+    // Admin can send to all roles
+    const allowedRoles = ['admin', 'dean', 'warden', 'caretaker', 'student'];
+    const invalidRoles = targetRoles.filter(r => r !== 'all' && !allowedRoles.includes(r));
+    if (invalidRoles.length > 0) {
+      throw new AppError(`Invalid roles: ${invalidRoles.join(', ')}`, 400);
     }
 
     // Map type to priority (only use valid enum values: low, medium, high)
@@ -1462,11 +1473,11 @@ exports.createNotification = async (req, res, next) => {
     const filter = {};
     if (targetRoles.length === 1 && targetRoles[0] !== 'all') {
       filter.role = targetRoles[0];
-    } else if (targetRoles.length > 1) {
+    } else if (targetRoles.length > 1 && !targetRoles.includes('all')) {
       filter.role = { $in: targetRoles };
     }
 
-    if (targetHostels && targetHostels.length > 0) {
+    if (targetHostels && targetHostels.length > 0 && !targetHostels.includes('all')) {
       filter.hostelId = { $in: targetHostels };
     }
 
@@ -1488,7 +1499,7 @@ exports.createNotification = async (req, res, next) => {
 
     res.status(201).json({ 
       success: true, 
-      message: 'Notification sent successfully',
+      message: `Notification sent successfully to ${users.length} users`,
       data: {
         id: populated._id,
         title: populated.title,
@@ -1497,9 +1508,63 @@ exports.createNotification = async (req, res, next) => {
         priority: populated.priority,
         targetRoles,
         targetHostels: targetHostels || [],
+        recipientCount: users.length,
         sentAt: populated.publishedAt || populated.createdAt,
         sentBy: populated.publishedBy?.name || 'Admin',
         createdAt: populated.createdAt
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getAllNotifications = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, type, isRead } = req.query;
+
+    const filter = { userId: req.user._id };
+    
+    if (type && type !== 'all') {
+      filter.type = type;
+    }
+    
+    if (isRead !== undefined) {
+      filter.isRead = isRead === 'true';
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const total = await Notification.countDocuments(filter);
+    const unreadCount = await Notification.countDocuments({ userId: req.user._id, isRead: false });
+
+    const notifications = await Notification.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const formattedNotifications = notifications.map(n => ({
+      id: n._id,
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      priority: n.priority || 'medium',
+      isRead: n.isRead,
+      createdAt: n.createdAt,
+      relatedId: n.relatedId,
+      relatedType: n.relatedModel
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        notifications: formattedNotifications,
+        unreadCount,
+        pagination: {
+          total,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(total / limit)
+        }
       }
     });
   } catch (error) {

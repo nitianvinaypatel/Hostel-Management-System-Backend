@@ -13,6 +13,14 @@ const Rating = require('../models/Rating');
 const Inventory = require('../models/Inventory');
 const { createNotification } = require('../services/notificationService');
 const { AppError } = require('../middleware/error.middleware');
+const {
+  sendApplicationApprovedEmail,
+  sendApplicationRejectedEmail,
+  sendComplaintStatusUpdateEmail,
+  sendComplaintForwardedEmail,
+  sendRequisitionApprovedEmail,
+  sendRequisitionRejectedEmail
+} = require('../services/emailService');
 
 // ==================== DASHBOARD APIs ====================
 
@@ -448,6 +456,22 @@ exports.approveApproval = async (req, res, next) => {
       application._id
     );
 
+    // Send email to student
+    try {
+      const user = await User.findById(student.userId);
+      const warden = await User.findById(wardenId);
+      await sendApplicationApprovedEmail(
+        user.email,
+        user.name,
+        hostel.name,
+        room.roomNumber,
+        application.applicationId,
+        warden.name
+      );
+    } catch (emailError) {
+      console.error('Failed to send application approved email:', emailError);
+    }
+
     res.json({
       success: true,
       message: 'Application approved successfully',
@@ -499,6 +523,22 @@ exports.rejectApproval = async (req, res, next) => {
       'request',
       application._id
     );
+
+    // Send email to student
+    try {
+      const user = await User.findById(student.userId);
+      const warden = await User.findById(wardenId);
+      await sendApplicationRejectedEmail(
+        user.email,
+        user.name,
+        hostel.name,
+        application.applicationId,
+        comments || 'Not specified',
+        warden.name
+      );
+    } catch (emailError) {
+      console.error('Failed to send application rejected email:', emailError);
+    }
 
     res.json({
       success: true,
@@ -1269,6 +1309,23 @@ exports.approveRequisition = async (req, res, next) => {
       requisition._id
     );
 
+    // Send email to caretaker
+    try {
+      const caretaker = await User.findById(requisition.requestedBy._id);
+      const warden = await User.findById(wardenId);
+      await sendRequisitionApprovedEmail(
+        caretaker.email,
+        caretaker.name,
+        requisition.requisitionId,
+        requisition.title,
+        requisition.estimatedAmount,
+        warden.name,
+        'warden'
+      );
+    } catch (emailError) {
+      console.error('Failed to send requisition approved email:', emailError);
+    }
+
     res.json({
       success: true,
       message: 'Requisition approved successfully',
@@ -1322,6 +1379,23 @@ exports.rejectRequisition = async (req, res, next) => {
       'requisition',
       requisition._id
     );
+
+    // Send email to caretaker
+    try {
+      const caretaker = await User.findById(requisition.requestedBy._id);
+      const warden = await User.findById(wardenId);
+      await sendRequisitionRejectedEmail(
+        caretaker.email,
+        caretaker.name,
+        requisition.requisitionId,
+        requisition.title,
+        requisition.estimatedAmount,
+        warden.name,
+        comments || 'Not specified'
+      );
+    } catch (emailError) {
+      console.error('Failed to send requisition rejected email:', emailError);
+    }
 
     res.json({
       success: true,
@@ -2574,3 +2648,221 @@ exports.rejectHostelApplication = async (req, res, next) => {
     next(error);
   }
 };
+
+// ==================== NOTIFICATION MANAGEMENT APIs ====================
+
+// Send Notification (Warden can send to all except dean and admin)
+exports.sendNotification = async (req, res, next) => {
+  try {
+    const { title, message, type, targetRoles, targetHostels, priority } = req.body;
+
+    if (!title || !message) {
+      throw new AppError('Title and message are required', 400);
+    }
+
+    if (!targetRoles || targetRoles.length === 0) {
+      throw new AppError('At least one target role must be selected', 400);
+    }
+
+    // Warden can send to: warden, caretaker, student (NOT admin, NOT dean)
+    const allowedRoles = ['warden', 'caretaker', 'student'];
+    const invalidRoles = targetRoles.filter(r => r !== 'all' && !allowedRoles.includes(r));
+    if (invalidRoles.length > 0 || targetRoles.includes('admin') || targetRoles.includes('dean')) {
+      throw new AppError('Warden cannot send notifications to admin or dean roles', 403);
+    }
+
+    // Get warden's hostel(s)
+    const wardenHostels = await Hostel.find({ wardenId: req.user._id }).select('_id');
+    const wardenHostelIds = wardenHostels.map(h => h._id.toString());
+
+    // If targetHostels specified, verify warden has access
+    if (targetHostels && targetHostels.length > 0 && !targetHostels.includes('all')) {
+      const invalidHostels = targetHostels.filter(h => !wardenHostelIds.includes(h));
+      if (invalidHostels.length > 0) {
+        throw new AppError('You can only send notifications to your assigned hostels', 403);
+      }
+    }
+
+    // Map type to priority
+    const priorityMap = {
+      'emergency': 'high',
+      'announcement': 'high',
+      'policy': 'medium',
+      'maintenance': 'medium',
+      'general': 'low',
+      'urgent': 'high'
+    };
+
+    // Map type to Notice type enum
+    const typeMap = {
+      'emergency': 'urgent',
+      'announcement': 'general',
+      'policy': 'general',
+      'maintenance': 'maintenance'
+    };
+
+    const notice = await Notice.create({
+      title,
+      content: message,
+      type: typeMap[type] || 'general',
+      priority: priority || priorityMap[type] || 'medium',
+      publishedBy: req.user._id,
+      targetAudience: {
+        roles: targetRoles,
+        hostels: targetHostels || wardenHostelIds
+      },
+      isActive: true
+    });
+
+    // Send notifications to target users
+    const filter = {};
+    if (targetRoles.length === 1 && targetRoles[0] !== 'all') {
+      filter.role = targetRoles[0];
+    } else if (targetRoles.length > 1 && !targetRoles.includes('all')) {
+      filter.role = { $in: targetRoles };
+    } else if (targetRoles.includes('all')) {
+      // Warden's "all" means all except admin and dean
+      filter.role = { $in: allowedRoles };
+    }
+
+    // Restrict to warden's hostels
+    const hostelFilter = targetHostels && targetHostels.length > 0 && !targetHostels.includes('all')
+      ? targetHostels
+      : wardenHostelIds;
+    
+    filter.hostelId = { $in: hostelFilter };
+
+    const users = await User.find(filter).select('_id');
+
+    for (const user of users) {
+      await createNotification(
+        user._id,
+        title,
+        message,
+        'notice',
+        notice._id
+      );
+    }
+
+    const populated = await Notice.findById(notice._id)
+      .populate('publishedBy', 'name email')
+      .populate('targetAudience.hostels', 'name code');
+
+    res.status(201).json({ 
+      success: true, 
+      message: `Notification sent successfully to ${users.length} users`,
+      data: {
+        id: populated._id,
+        title: populated.title,
+        message: populated.content,
+        type: populated.type,
+        priority: populated.priority,
+        targetRoles,
+        targetHostels: hostelFilter,
+        recipientCount: users.length,
+        sentAt: populated.publishedAt || populated.createdAt,
+        sentBy: populated.publishedBy?.name || 'Warden',
+        createdAt: populated.createdAt
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get Notifications for Warden
+exports.getNotifications = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, type, isRead } = req.query;
+
+    const filter = { userId: req.user._id };
+    
+    if (type && type !== 'all') {
+      filter.type = type;
+    }
+    
+    if (isRead !== undefined) {
+      filter.isRead = isRead === 'true';
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const total = await Notification.countDocuments(filter);
+    const unreadCount = await Notification.countDocuments({ userId: req.user._id, isRead: false });
+
+    const notifications = await Notification.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const formattedNotifications = notifications.map(n => ({
+      id: n._id,
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      priority: n.priority || 'medium',
+      isRead: n.isRead,
+      createdAt: n.createdAt,
+      relatedId: n.relatedId,
+      relatedType: n.relatedModel
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        notifications: formattedNotifications,
+        unreadCount,
+        pagination: {
+          total,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Mark Notification as Read
+exports.markNotificationRead = async (req, res, next) => {
+  try {
+    const { notificationId } = req.params;
+
+    const notification = await Notification.findOne({ _id: notificationId, userId: req.user._id });
+    
+    if (!notification) {
+      throw new AppError('Notification not found', 404);
+    }
+
+    notification.isRead = true;
+    notification.readAt = new Date();
+    await notification.save();
+
+    res.json({
+      success: true,
+      message: 'Notification marked as read'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Mark All Notifications as Read
+exports.markAllNotificationsRead = async (req, res, next) => {
+  try {
+    await Notification.updateMany(
+      { userId: req.user._id, isRead: false },
+      { isRead: true, readAt: new Date() }
+    );
+
+    res.json({
+      success: true,
+      message: 'All notifications marked as read'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = exports;

@@ -6,6 +6,11 @@ const Hostel = require('../models/Hostel');
 const { AppError, catchAsync } = require('../middleware/error.middleware');
 const { sendEmail } = require('../config/email');
 const { generateId } = require('../utils/helpers');
+const { 
+  sendWelcomeEmail, 
+  sendPasswordResetEmail,
+  sendPasswordChangedEmail 
+} = require('../services/emailService');
 
 const generateToken = (userId, role) => {
   return jwt.sign({ userId, role }, process.env.JWT_SECRET, {
@@ -134,29 +139,7 @@ exports.register = catchAsync(async (req, res) => {
 
   // Send welcome email
   try {
-    const hostelInfo = hostelId ? await Hostel.findById(hostelId).select('name code') : null;
-    
-    await sendEmail(
-      user.email,
-      'Welcome to Hostel Management System',
-      `<div style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2>Welcome to HMS, ${name}!</h2>
-        <p>Your account has been successfully created.</p>
-        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <p><strong>Account Details:</strong></p>
-          <p>Email: ${email}</p>
-          <p>Student ID: ${studentId}</p>
-          <p>Course: ${course}</p>
-          <p>Branch: ${branch}</p>
-          <p>Year: ${year} | Semester: ${semester}</p>
-          ${hostelInfo ? `<p>Hostel: ${hostelInfo.name} (${hostelInfo.code})</p>` : '<p>Hostel: Not assigned yet</p>'}
-        </div>
-        <p>You can now login at <a href="${process.env.FRONTEND_URL}">${process.env.FRONTEND_URL}</a></p>
-        <p>If you have any questions, feel free to contact support.</p>
-        <br>
-        <p>Best regards,<br>HMS Team</p>
-      </div>`
-    );
+    await sendWelcomeEmail(user.email, name, 'student');
   } catch (emailError) {
     console.error('Failed to send welcome email:', emailError);
     // Don't throw error, registration should succeed even if email fails
@@ -241,6 +224,13 @@ exports.changePassword = catchAsync(async (req, res) => {
   user.password = newPassword;
   await user.save();
 
+  // Send password changed confirmation email
+  try {
+    await sendPasswordChangedEmail(user.email, user.name);
+  } catch (emailError) {
+    console.error('Failed to send password changed email:', emailError);
+  }
+
   res.json({
     success: true,
     message: 'Password changed successfully',
@@ -265,11 +255,12 @@ exports.forgotPassword = catchAsync(async (req, res) => {
 
   const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
   
-  await sendEmail(
-    user.email,
-    'Password Reset Request',
-    `<p>Click the link to reset your password: <a href="${resetUrl}">${resetUrl}</a></p><p>This link expires in 1 hour.</p>`
-  );
+  try {
+    await sendPasswordResetEmail(user.email, user.name, resetUrl);
+  } catch (emailError) {
+    console.error('Failed to send password reset email:', emailError);
+    throw new AppError('Failed to send password reset email. Please try again.', 500);
+  }
 
   res.json({
     success: true,
@@ -297,6 +288,13 @@ exports.resetPassword = catchAsync(async (req, res) => {
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
   await user.save();
+
+  // Send password changed confirmation email
+  try {
+    await sendPasswordChangedEmail(user.email, user.name);
+  } catch (emailError) {
+    console.error('Failed to send password changed email:', emailError);
+  }
 
   res.json({
     success: true,

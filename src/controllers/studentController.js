@@ -14,6 +14,13 @@ const Event = require('../models/Event');
 const HostelApplication = require('../models/HostelApplication');
 const { AppError, catchAsync } = require('../middleware/error.middleware');
 const { generateId, getPaginationParams } = require('../utils/helpers');
+const {
+  sendApplicationSubmittedEmail,
+  sendApplicationToWardenEmail,
+  sendComplaintSubmittedEmail,
+  sendComplaintToCaretakerEmail,
+  sendRequestSubmittedEmail
+} = require('../services/emailService');
 
 // ==================== DASHBOARD ====================
 exports.getDashboard = catchAsync(async (req, res) => {
@@ -433,6 +440,39 @@ exports.submitHostelApplication = catchAsync(async (req, res) => {
     semester: student.semester
   });
 
+  // Send email to student
+  try {
+    const user = await User.findById(student.userId);
+    await sendApplicationSubmittedEmail(
+      user.email,
+      user.name,
+      hostel.name,
+      roomNumber,
+      application.applicationId
+    );
+  } catch (emailError) {
+    console.error('Failed to send application submitted email:', emailError);
+  }
+
+  // Send email to warden
+  try {
+    const Warden = require('../models/Warden');
+    const warden = await Warden.findOne({ hostelId: hostel._id }).populate('userId');
+    if (warden && warden.userId) {
+      const user = await User.findById(student.userId);
+      await sendApplicationToWardenEmail(
+        warden.userId.email,
+        warden.userId.name,
+        user.name,
+        hostel.name,
+        roomNumber,
+        application.applicationId
+      );
+    }
+  } catch (emailError) {
+    console.error('Failed to send application to warden email:', emailError);
+  }
+
   res.status(201).json({
     success: true,
     message: 'Application submitted successfully',
@@ -598,6 +638,44 @@ exports.createComplaint = catchAsync(async (req, res) => {
     roomNumber: student.roomNumber
   });
 
+  // Send email to student
+  try {
+    const user = await User.findById(student.userId);
+    await sendComplaintSubmittedEmail(
+      user.email,
+      user.name,
+      complaint.complaintId,
+      title,
+      mappedCategory
+    );
+  } catch (emailError) {
+    console.error('Failed to send complaint submitted email:', emailError);
+  }
+
+  // Send email to caretaker
+  try {
+    const Caretaker = require('../models/Caretaker');
+    const caretaker = await Caretaker.findOne({ 
+      hostelId: student.hostelId,
+      isActive: true 
+    }).populate('userId');
+    
+    if (caretaker && caretaker.userId) {
+      const user = await User.findById(student.userId);
+      await sendComplaintToCaretakerEmail(
+        caretaker.userId.email,
+        caretaker.userId.name,
+        user.name,
+        complaint.complaintId,
+        title,
+        mappedCategory,
+        description
+      );
+    }
+  } catch (emailError) {
+    console.error('Failed to send complaint to caretaker email:', emailError);
+  }
+
   res.status(201).json({
     success: true,
     message: 'Complaint submitted successfully',
@@ -704,6 +782,20 @@ exports.createRequest = catchAsync(async (req, res) => {
     startDate,
     endDate
   });
+
+  // Send email to student
+  try {
+    const user = await User.findById(student.userId);
+    await sendRequestSubmittedEmail(
+      user.email,
+      user.name,
+      request.requestId,
+      type,
+      subject || type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    );
+  } catch (emailError) {
+    console.error('Failed to send request submitted email:', emailError);
+  }
 
   res.status(201).json({
     success: true,

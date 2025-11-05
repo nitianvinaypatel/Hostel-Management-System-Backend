@@ -67,6 +67,7 @@ router.post('/rooms/allot', caretakerController.allotRoom);
 router.post('/rooms/deallocate', caretakerController.deallocateRoom);
 
 // ==================== NOTIFICATIONS ====================
+router.post('/notifications/send', caretakerController.sendNotification);
 router.get('/notifications', caretakerController.getNotifications);
 router.patch('/notifications/:id/read', caretakerController.markNotificationAsRead);
 router.patch('/notifications/read-all', caretakerController.markAllNotificationsAsRead);

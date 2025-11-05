@@ -9,6 +9,14 @@ const Notification = require('../models/Notification');
 const Hostel = require('../models/Hostel');
 const User = require('../models/User');
 const { generateId } = require('../utils/helpers');
+const {
+  sendComplaintStatusUpdateEmail,
+  sendComplaintForwardedEmail,
+  sendRequestApprovedEmail,
+  sendRequestRejectedEmail,
+  sendRequisitionSubmittedEmail,
+  sendRequisitionToWardenEmail
+} = require('../services/emailService');
 
 // ==================== DASHBOARD ====================
 
@@ -265,7 +273,26 @@ exports.updateComplaintStatus = catchAsync(async (req, res) => {
     });
   }
 
+  const oldStatus = complaint.status;
   await complaint.save();
+
+  // Send email to student
+  try {
+    const student = await Student.findById(complaint.studentId).populate('userId');
+    if (student && student.userId) {
+      await sendComplaintStatusUpdateEmail(
+        student.userId.email,
+        student.userId.name,
+        complaint.complaintId,
+        complaint.title,
+        oldStatus,
+        status,
+        notes
+      );
+    }
+  } catch (emailError) {
+    console.error('Failed to send complaint status update email:', emailError);
+  }
 
   res.json({
     success: true,
@@ -312,6 +339,23 @@ exports.forwardComplaint = catchAsync(async (req, res) => {
       relatedId: complaint._id,
       relatedModel: 'Complaint'
     });
+
+    // Send email to warden
+    try {
+      const student = await Student.findById(complaint.studentId).populate('userId');
+      const caretaker = await User.findById(req.user._id);
+      await sendComplaintForwardedEmail(
+        warden.email,
+        warden.name,
+        student.userId?.name || 'Student',
+        complaint.complaintId,
+        complaint.title,
+        complaint.category,
+        caretaker.name
+      );
+    } catch (emailError) {
+      console.error('Failed to send complaint forwarded email:', emailError);
+    }
   }
 
   res.json({
@@ -560,6 +604,25 @@ exports.approveRequest = catchAsync(async (req, res) => {
     relatedModel: 'Request'
   });
 
+  // Send email to student
+  try {
+    const student = await Student.findById(request.studentId).populate('userId');
+    const approver = await User.findById(req.user._id);
+    if (student && student.userId) {
+      await sendRequestApprovedEmail(
+        student.userId.email,
+        student.userId.name,
+        request.requestId,
+        request.requestType,
+        request.subject || request.requestType.replace('_', ' '),
+        approver.name,
+        notes
+      );
+    }
+  } catch (emailError) {
+    console.error('Failed to send request approved email:', emailError);
+  }
+
   res.json({
     success: true,
     data: {
@@ -602,6 +665,25 @@ exports.rejectRequest = catchAsync(async (req, res) => {
     relatedId: request._id,
     relatedModel: 'Request'
   });
+
+  // Send email to student
+  try {
+    const student = await Student.findById(request.studentId).populate('userId');
+    const reviewer = await User.findById(req.user._id);
+    if (student && student.userId) {
+      await sendRequestRejectedEmail(
+        student.userId.email,
+        student.userId.name,
+        request.requestId,
+        request.requestType,
+        request.subject || request.requestType.replace('_', ' '),
+        reviewer.name,
+        reason
+      );
+    }
+  } catch (emailError) {
+    console.error('Failed to send request rejected email:', emailError);
+  }
 
   res.json({
     success: true,
@@ -761,6 +843,36 @@ exports.createRequisition = catchAsync(async (req, res) => {
       relatedId: requisition._id,
       relatedModel: 'Requisition'
     });
+
+    // Send email to warden
+    try {
+      const caretaker = await User.findById(req.user._id);
+      await sendRequisitionToWardenEmail(
+        warden.email,
+        warden.name,
+        caretaker.name,
+        requisition.requisitionId,
+        title,
+        amount,
+        urgency || 'medium'
+      );
+    } catch (emailError) {
+      console.error('Failed to send requisition to warden email:', emailError);
+    }
+  }
+
+  // Send confirmation email to caretaker
+  try {
+    const caretaker = await User.findById(req.user._id);
+    await sendRequisitionSubmittedEmail(
+      caretaker.email,
+      caretaker.name,
+      requisition.requisitionId,
+      title,
+      amount
+    );
+  } catch (emailError) {
+    console.error('Failed to send requisition submitted email:', emailError);
   }
 
   res.status(201).json({
@@ -1682,6 +1794,115 @@ exports.sendNotice = catchAsync(async (req, res) => {
   res.json({
     success: true,
     message: `Notice sent to ${students.length} students`,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ==================== NOTIFICATION SENDING API ====================
+
+// Send Notification (Caretaker can only send to students)
+exports.sendNotification = catchAsync(async (req, res) => {
+  const { title, message, type, priority, targetRooms, targetFloors } = req.body;
+  const caretakerHostelId = req.user.hostelId;
+
+  if (!title || !message) {
+    throw new AppError('Title and message are required', 400);
+  }
+
+  // Caretaker can ONLY send to students in their hostel
+  const allowedRoles = ['student'];
+
+  // Map type to priority
+  const priorityMap = {
+    'emergency': 'high',
+    'announcement': 'high',
+    'policy': 'medium',
+    'maintenance': 'medium',
+    'general': 'low',
+    'urgent': 'high'
+  };
+
+  // Map type to Notice type enum
+  const typeMap = {
+    'emergency': 'urgent',
+    'announcement': 'general',
+    'policy': 'general',
+    'maintenance': 'maintenance'
+  };
+
+  const notice = await Notice.create({
+    title,
+    content: message,
+    type: typeMap[type] || 'general',
+    priority: priority || priorityMap[type] || 'medium',
+    publishedBy: req.user._id,
+    targetAudience: {
+      roles: ['student'],
+      hostels: [caretakerHostelId]
+    },
+    isActive: true
+  });
+
+  // Build filter for students
+  const studentFilter = { hostelId: caretakerHostelId };
+
+  // Filter by rooms if specified
+  if (targetRooms && targetRooms.length > 0) {
+    studentFilter.roomNumber = { $in: targetRooms };
+  }
+
+  // Filter by floors if specified
+  if (targetFloors && targetFloors.length > 0) {
+    const rooms = await Room.find({ 
+      hostelId: caretakerHostelId, 
+      floor: { $in: targetFloors } 
+    }).select('roomNumber');
+    const roomNumbers = rooms.map(r => r.roomNumber);
+    
+    if (studentFilter.roomNumber) {
+      // Intersect with existing room filter
+      studentFilter.roomNumber.$in = studentFilter.roomNumber.$in.filter(r => roomNumbers.includes(r));
+    } else {
+      studentFilter.roomNumber = { $in: roomNumbers };
+    }
+  }
+
+  const students = await Student.find(studentFilter).select('userId');
+  const userIds = students.map(s => s.userId);
+
+  // Send notifications
+  for (const userId of userIds) {
+    await Notification.create({
+      userId,
+      type: 'notice',
+      title,
+      message,
+      priority: priority || priorityMap[type] || 'medium',
+      relatedId: notice._id,
+      relatedModel: 'Notice'
+    });
+  }
+
+  const populated = await Notice.findById(notice._id)
+    .populate('publishedBy', 'name email')
+    .populate('targetAudience.hostels', 'name code');
+
+  res.status(201).json({ 
+    success: true, 
+    message: `Notification sent successfully to ${userIds.length} students`,
+    data: {
+      id: populated._id,
+      title: populated.title,
+      message: populated.content,
+      type: populated.type,
+      priority: populated.priority,
+      targetRoles: ['student'],
+      targetHostels: [caretakerHostelId],
+      recipientCount: userIds.length,
+      sentAt: populated.publishedAt || populated.createdAt,
+      sentBy: populated.publishedBy?.name || 'Caretaker',
+      createdAt: populated.createdAt
+    },
     timestamp: new Date().toISOString()
   });
 });

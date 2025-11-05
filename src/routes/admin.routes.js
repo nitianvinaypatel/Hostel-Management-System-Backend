@@ -42,6 +42,7 @@ router.put('/requisitions/:requisitionId/process', adminController.processRequis
 
 // Notifications
 router.get('/notifications', adminController.getAllNotifications);
+router.post('/notifications/send', adminController.createNotification);
 router.post('/notifications', adminController.createNotification);
 
 // Reports
