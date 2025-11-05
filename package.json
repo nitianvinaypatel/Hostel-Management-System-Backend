@@ -7,7 +7,8 @@
     "npm": ">=9.x"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "echo 'Dependencies installed successfully'"
   },
   "keywords": [
     "hostel",

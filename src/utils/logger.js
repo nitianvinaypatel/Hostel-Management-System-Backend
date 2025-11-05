@@ -1,7 +1,6 @@
 const winston = require('winston');
 
-// Only use console transport for serverless/production
-// File system is read-only in Vercel
+// Use console transport for production
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(

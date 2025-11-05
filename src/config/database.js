@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    // Avoid multiple connections in serverless
+    // Avoid multiple connections
     if (mongoose.connection.readyState >= 1) {
       console.log('MongoDB already connected');
       return;
@@ -16,11 +16,7 @@ const connectDB = async () => {
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error(`MongoDB connection error: ${error.message}`);
-    // Don't exit in serverless environment
-    if (!process.env.VERCEL) {
-      process.exit(1);
-    }
-    throw error;
+    process.exit(1);
   }
 };
 
