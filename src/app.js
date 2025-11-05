@@ -7,9 +7,16 @@ const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
 
+// Security & Middleware
 app.use(helmet());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Custom MongoDB sanitization middleware (Express 5.x compatible)
+// MongoDB sanitization
 app.use((req, res, next) => {
   const sanitize = (obj) => {
     if (obj && typeof obj === 'object') {
@@ -27,72 +34,40 @@ app.use((req, res, next) => {
   if (req.body) sanitize(req.body);
   if (req.query) sanitize(req.query);
   if (req.params) sanitize(req.params);
-  
   next();
 });
-
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
-}));
-
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+// Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000,
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => {
-    res.status(429).json({
-      success: false,
-      message: 'Too many requests from this IP, please try again later',
-      timestamp: new Date().toISOString()
-    });
-  }
+  message: { success: false, message: 'Too many requests, please try again later' }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: 'Too many authentication attempts, try again after 15 minutes' }
 });
 
 app.use('/api/', limiter);
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Increased from 5 to 10 attempts
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => {
-    res.status(429).json({
-      success: false,
-      message: 'Too many authentication attempts, please try again after 15 minutes',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
+// Health check routes
 app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Hostel Management System API',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
-  });
+  res.json({ success: true, message: 'Hostel Management System API', version: '1.0.0' });
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Server is running',
-    timestamp: new Date().toISOString()
-  });
+  res.json({ success: true, message: 'Server is running' });
 });
 
+// Routes
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/student', require('./routes/student.routes'));
 app.use('/api/caretaker', require('./routes/caretaker.routes'));
@@ -101,13 +76,9 @@ app.use('/api/admin', require('./routes/admin.routes'));
 app.use('/api/dean', require('./routes/dean.routes'));
 app.use('/api', require('./routes/common.routes'));
 
-// 404 handler - must be after all routes
-app.use((req, res, next) => {
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.originalUrl} not found`,
-    timestamp: new Date().toISOString()
-  });
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
 app.use(errorHandler);
