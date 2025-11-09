@@ -16,13 +16,14 @@ try {
 // Connect to database
 connectDB().catch(err => {
   logger.error('Database connection failed:', err);
+  process.exit(1);
 });
 
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+  logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
 
 // Error handlers
@@ -37,8 +38,34 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('SIGTERM', () => {
-  console.log('Shutting down gracefully...');
-  server.close(() => process.exit(0));
+  logger.info('SIGTERM received — shutting down gracefully...');
+  server.close(async () => {
+    try {
+      // Close database connection
+      const mongoose = require('mongoose');
+      await mongoose.connection.close();
+      logger.info('Database connection closed');
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during shutdown:', err);
+      process.exit(1);
+    }
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received — shutting down gracefully...');
+  server.close(async () => {
+    try {
+      const mongoose = require('mongoose');
+      await mongoose.connection.close();
+      logger.info('Database connection closed');
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during shutdown:', err);
+      process.exit(1);
+    }
+  });
 });
 
 module.exports = server;
